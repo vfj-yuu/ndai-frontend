@@ -9,6 +9,12 @@ on:
       - main
   workflow_dispatch:
 
+env:
+  NODE_VERSION: '18.x'
+  WORKING_DIRECTORY: .
+  PACKAGE_NAME: ndai-app
+  ARCHIVE_NAME: ndai-app.zip
+
 jobs:
   build:
     runs-on: windows-latest
@@ -19,19 +25,25 @@ jobs:
       - name: Set up Node.js version
         uses: actions/setup-node@v3
         with:
-          node-version: '18.x'
+          node-version: ${{ env.NODE_VERSION }}
 
       - name: npm install, build, 
         run: |
           npm install
           npm run build --if-present
-          
+
+      - name: Install zip
+        uses: montudor/action-zip@v1
+
+      - name: Zip output
+        run: zip -qq -r ${{ env.ARCHIVE_NAME }} .
+        working-directory: ${{ env.WORKING_DIRECTORY }}
 
       - name: Upload artifact for deployment job
         uses: actions/upload-artifact@v3
         with:
-          name: node-app
-          path: .
+          name: ${{ env.PACKAGE_NAME }}
+          path: ${{ env.WORKING_DIRECTORY }}/${{ env.ARCHIVE_NAME }}
 
   deploy:
     runs-on: ubuntu-latest
@@ -44,7 +56,7 @@ jobs:
       - name: Download artifact from build job
         uses: actions/download-artifact@v3
         with:
-          name: node-app
+          name: ${{ env.PACKAGE_NAME }}
 
       - name: 'Deploy to Azure Web App'
         uses: azure/webapps-deploy@v2
@@ -53,4 +65,4 @@ jobs:
           app-name: 'ndai-app'
           slot-name: 'Production'
           publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_42B65D6CB06A4ACAB362E3AEFBE539D2 }}
-          package: .
+          package:  ${{ env.ARCHIVE_NAME }}
