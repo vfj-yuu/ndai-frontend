@@ -20,30 +20,45 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v3
 
       - name: Set up Node.js version
         uses: actions/setup-node@v3
         with:
           node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
 
-      - name: npm install, build, 
-        run: |
-          npm install
-          npm run build --if-present
+      - uses: actions/cache@v3
+        with:
+          # See here for caching with `yarn` https://github.com/actions/cache/blob/main/examples.md#node---yarn or you can leverage caching with actions/setup-node https://github.com/actions/setup-node
+          path: |
+            ${{ github.workspace }}/.next/cache
+          # Generate a new cache whenever packages or source files change.
+          key: ${{ runner.os }}-nextjs-${{ hashFiles('**/package-lock.json') }}-${{ hashFiles('**.[jt]s', '**.[jt]sx') }}
+          # If source files changed but packages didn't, rebuild from a prior cache.
+          restore-keys: |
+            ${{ runner.os }}-nextjs-${{ hashFiles('**/package-lock.json') }}-
 
-      - name: Install zip
-        uses: montudor/action-zip@v1
+      - name: npm ci
+        run: npm ci --no-fund
 
-      - name: Zip output
-        run: zip -qq -r ${{ env.ARCHIVE_NAME }} .
-        working-directory: ${{ env.WORKING_DIRECTORY }}
+      - name: npm build
+        run: npm run build --if-present
+
+      - name: npm prune
+        run:  npm prune --production --no-audit --no-fund
+
+      - name: Craete node_modules.tar.gz
+        run: sh ./preapareLocalCompressedNodeModule.sh
+
+      - name: Zip all files for upload between jobs
+        run: zip next.zip ./* .next -qr
 
       - name: Upload artifact for deployment job
         uses: actions/upload-artifact@v3
         with:
-          name: ${{ env.PACKAGE_NAME }}
-          path: ${{ env.WORKING_DIRECTORY }}/${{ env.ARCHIVE_NAME }}
+          name: ${{env.PACKAGE_NAME}}
+          path: next.zip
 
   deploy:
     runs-on: ubuntu-latest
@@ -56,13 +71,17 @@ jobs:
       - name: Download artifact from build job
         uses: actions/download-artifact@v3
         with:
-          name: ${{ env.PACKAGE_NAME }}
+          name: ${{env.PACKAGE_NAME}}
 
       - name: 'Deploy to Azure Web App'
-        uses: azure/webapps-deploy@v2
         id: deploy-to-webapp
+        uses: azure/webapps-deploy@v2
         with:
-          app-name: 'ndai-app'
+          app-name: 'node-deploy-speed-test'
           slot-name: 'Production'
           publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_42B65D6CB06A4ACAB362E3AEFBE539D2 }}
-          package:  ${{ env.ARCHIVE_NAME }}
+          package: next.zip
+
+      - name: Delete zip file
+        run: rm next.zip
+
